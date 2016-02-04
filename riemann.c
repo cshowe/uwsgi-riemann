@@ -8,6 +8,7 @@ struct riemann_config {
 	uint64_t host_len;
 	char *description;
 	char *tags;
+	struct uwsgi_buffer *attribute_buffer;
 	int fd;
 	union uwsgi_sockaddr addr;
         socklen_t addr_len;
@@ -58,6 +59,10 @@ static int riemann_metric(struct riemann_config *rc, struct uwsgi_metric *um, ui
 	if (pb_bytes(ub, 4, rc->host, rc->host_len)) return -1;
 	if (pb_bytes(ub, 3, um->name, um->name_len)) return -1;
 	if (pb_svarint(ub, 13, *um->value)) return -1;
+	if (rc->attribute_buffer) {
+		if (uwsgi_buffer_append(ub, rc->attribute_buffer->buf, rc->attribute_buffer->pos))
+			return -1;
+	}
 	// now add the prefix
 	ub = rc->ub;
 	ub->pos = 0;
@@ -75,11 +80,13 @@ static void stats_pusher_riemann(struct uwsgi_stats_pusher_instance *uspi, time_
 		rc->host = uwsgi.hostname;
 		rc->host_len = uwsgi.hostname_len;
 		char *node = NULL;
+		char *attributes = NULL;
 		if (strchr(uspi->arg, '=')) {	
 			if (uwsgi_kvlist_parse(uspi->arg, strlen(uspi->arg), ',', '=',
 				"addr", &node,
 				"node", &node,
 				"host", &rc->host,
+				"attributes", &attributes,
 				NULL)) {
 				uwsgi_log("[uwsgi-riemann] invalid keyval syntax\n");
 				exit(1);
@@ -104,6 +111,28 @@ static void stats_pusher_riemann(struct uwsgi_stats_pusher_instance *uspi, time_
 			uwsgi_error("stats_pusher_riemann()/socket()");
 			exit(1);
 		}
+		if (attributes) {
+			// Buffer for proto-encoded attributes.
+			rc->attribute_buffer = uwsgi_buffer_new(uwsgi.page_size);
+			// Buffer for each attribute proto message
+			struct uwsgi_buffer *ub = uwsgi_buffer_new(100);
+			char *attribute_end = attributes + strlen(attributes);
+			while (attributes < attribute_end) {
+				size_t key_len = 0;
+				size_t value_len = 0;
+				char* key = uwsgi_str_split_nget(attributes, attribute_end - attributes, '=', 0, &key_len);
+				char* value = uwsgi_str_split_nget(key + key_len + 1, attribute_end - attributes, ',', 0, &value_len);
+				pb_bytes(ub, 1, key, key_len);
+				pb_bytes(ub, 2, value, value_len);
+				attributes = (value + value_len + 1);
+				uwsgi_buffer_u8(rc->attribute_buffer, (9 << 3) | 2);
+				varint(rc->attribute_buffer, ub->pos);
+				uwsgi_buffer_append(rc->attribute_buffer, ub->buf, ub->pos);
+				ub->pos = 0;
+			}
+			uwsgi_buffer_destroy(ub);
+		}
+
 		uwsgi_socket_nb(rc->fd);
 		rc->ub = uwsgi_buffer_new(uwsgi.page_size);
 		rc->ub_body = uwsgi_buffer_new(uwsgi.page_size);
