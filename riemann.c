@@ -115,7 +115,7 @@ static void stats_pusher_riemann(struct uwsgi_stats_pusher_instance *uspi, time_
 			// Buffer for proto-encoded attributes.
 			rc->attribute_buffer = uwsgi_buffer_new(uwsgi.page_size);
 			// Buffer for each attribute proto message
-			struct uwsgi_buffer *ub = uwsgi_buffer_new(100);
+			struct uwsgi_buffer *ub = uwsgi_buffer_new(128);
 			char *attribute_end = attributes + strlen(attributes);
 			while (attributes < attribute_end) {
 				size_t key_len = 0;
