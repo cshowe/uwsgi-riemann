@@ -121,7 +121,8 @@ static void stats_pusher_riemann(struct uwsgi_stats_pusher_instance *uspi, time_
 				size_t key_len = 0;
 				size_t value_len = 0;
 				char* key = uwsgi_str_split_nget(attributes, attribute_end - attributes, '=', 0, &key_len);
-				char* value = uwsgi_str_split_nget(key + key_len + 1, attribute_end - attributes, ',', 0, &value_len);
+				attributes = key + key_len + 1;
+				char* value = uwsgi_str_split_nget(attributes, attribute_end - attributes, ',', 0, &value_len);
 				pb_bytes(ub, 1, key, key_len);
 				pb_bytes(ub, 2, value, value_len);
 				attributes = (value + value_len + 1);
