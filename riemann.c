@@ -146,9 +146,17 @@ static void stats_pusher_riemann(struct uwsgi_stats_pusher_instance *uspi, time_
 	struct riemann_config *rc = (struct riemann_config *) uspi->data;
 	struct uwsgi_metric *um = uwsgi.metrics;
 	while(um) {
-		uwsgi_rlock(uwsgi.metrics_lock);
-		int ret = riemann_metric(rc, um, (uint64_t)now);
-		uwsgi_rwunlock(uwsgi.metrics_lock);
+        int ret;
+        if (um->reset_after_push) {
+            uwsgi_wlock(uwsgi.metrics_lock);
+            ret = riemann_metric(rc, um, (uint64_t)now);
+            *um->value = um->initial_value;
+            uwsgi_rwunlock(uwsgi.metrics_lock);
+        } else {
+            uwsgi_rlock(uwsgi.metrics_lock);
+            ret = riemann_metric(rc, um, (uint64_t)now);
+            uwsgi_rwunlock(uwsgi.metrics_lock);
+        }
 		if (ret) {
 			uwsgi_log_verbose("[uwsgi-riemann] unable to generate packet for %.*s\n", um->name_len, um->name);
 		}
